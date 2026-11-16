@@ -213,3 +213,8 @@ def generate_diurnal_traces(steps: int, seed: int = 42):
     qps_trace = np.clip(base_qps + bursts, 0.2, 8.0)
 
     # Diurnal Grid Carbon Intensity (gCO2eq/kWh): solar dip around 12:30, fossil peak at 19:30
+
+    solar_dip = -160.0 * np.exp(-0.5 * ((t_hours - 12.5) / 2.5) ** 2)
+    evening_peak = 130.0 * np.exp(-0.5 * ((t_hours - 19.5) / 2.5) ** 2)
+    ci_trace = np.clip(300.0 + solar_dip + evening_peak + rng.normal(0, 8.0, size=steps), 100.0, 460.0)
+    return t_hours, qps_trace, ci_trace

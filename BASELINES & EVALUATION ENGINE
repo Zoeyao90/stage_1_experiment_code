@@ -1,0 +1,51 @@
+def find_closest_valid_action(env: CarbonAwareLLMEnv, target_tp, target_pp, target_bs, target_quant):
+"""Finds the exact or closest feasible action index in env.valid_action_indices."""
+    best_i = 0
+    best_dist = 1e9
+    for i, real_idx in enumerate(env.valid_action_indices):
+     tp, pp, bs, quant = env.surrogate.actions[real_idx]
+     dist = abs(tp - target_tp) * 10 + abs(pp - target_pp) * 10 + abs(bs - target_bs) * 0.05
+     if quant != target_quant:
+     dist += 50
+     if dist < best_dist:
+        best_dist = dist
+        best_i = i
+    return best_i 
+
+def evaluate_policy(env: CarbonAwareLLMEnv, policy_type: str, model=None, eval_seed: int = 101) -> pd.DataFrame:
+obs, _ = env.reset(seed=eval_seed)
+records = []
+# Pre-resolve static baseline action indices
+act_max_tput = find_closest_valid_action(env, 4, 1, 256, "FP16")
+act_low_lat = find_closest_valid_action(env, 2, 1, 32, "FP16")
+act_quant = find_closest_valid_action(env, 2, 1, 128, "FP8")
+while True:
+if policy_type == "Carbon-Aware RL (Ours)":
+action, _ = model.predict(obs, deterministic=True)
+action = int(action)
+elif policy_type == "Static Max-Throughput":
+action = act_max_tput
+elif policy_type == "Static Low-Latency":
+action = act_low_lat
+elif policy_type == "Static Quantised":
+action = act_quant
+elif policy_type == "DynamoLLM-Style (Energy-Only)":
+# Minimises kWh while meeting SLOs, ignoring grid CI(t) and embodied carbon
+current_qps = env.qps_trace[env.step_idx]
+if current_qps < 1.8:
+action = find_closest_valid_action(env, 1, 1, 64, "FP8")
+elif current_qps < 3.2:
+action = find_closest_valid_action(env, 2, 1, 128, "FP8")
+else:
+action = find_closest_valid_action(env, 4, 1, 256, "FP8")
+else:
+raise ValueError(f"Unknown policy: {policy_type}")
+
+obs, reward, terminated, truncated, info = env.step(action)
+info["policy"] = policy_type
+records.append(info)
+if terminated or truncated:
+break
+return pd.DataFrame(records)
+
+
